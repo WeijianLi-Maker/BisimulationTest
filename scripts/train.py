@@ -67,11 +67,11 @@ def main():
         "data_path": os.path.join("data", "processed", "train_dataset.pt"),
         "batch_size": 32,
         "shuffle": True,
-        "learning_rate": 1e-4,
-        "num_epochs": 200,
+        "learning_rate": 2e-4,
+        "num_epochs": 50,
         "r": 0.001,
         "grad_clip": 10.0,
-        "m": 0.001,
+        "m": 0.01,
         "checkpoint_dir": "checkpoints",
         "results_dir": "results",
         "checkpoint_name": "latest.pt",
@@ -88,12 +88,21 @@ def main():
     # Load data
     # =========================
     payload = torch.load(config["data_path"])
+    dataset_payload = payload["dataset"]
+    required_fields = {"x", "z", "u", "v"}
+    missing_fields = sorted(required_fields - set(dataset_payload.keys()))
+    if missing_fields:
+        raise KeyError(
+            f"Dataset is missing fields {missing_fields}. "
+            "Regenerate it with scripts/generate_data.py."
+        )
 
-    x = payload["dataset"]["x"].to(dtype=dtype, device=device)
-    z = payload["dataset"]["z"].to(dtype=dtype, device=device)
-    v = payload["dataset"]["v"].to(dtype=dtype, device=device)
+    x = dataset_payload["x"].to(dtype=dtype, device=device)
+    z = dataset_payload["z"].to(dtype=dtype, device=device)
+    u = dataset_payload["u"].to(dtype=dtype, device=device)
+    v = dataset_payload["v"].to(dtype=dtype, device=device)
 
-    dataset = TensorDataset(x, z, v)
+    dataset = TensorDataset(x, z, u, v)
     dataloader = DataLoader(
         dataset,
         batch_size=config["batch_size"],
@@ -103,6 +112,7 @@ def main():
     print("Loaded dataset:")
     print("  x shape:", x.shape)
     print("  z shape:", z.shape)
+    print("  u shape:", u.shape)
     print("  v shape:", v.shape)
 
     # =========================
@@ -116,7 +126,7 @@ def main():
 
     optimizer = torch.optim.Adam(
         list(interface_net.parameters()) + list(sim_fn.parameters()),
-        lr= 2 * config["learning_rate"],
+        lr= config["learning_rate"],
     )
 
     # =========================
@@ -129,6 +139,7 @@ def main():
         "avg_Vdot_mean": [],
         "avg_violation_mean": [],
         "avg_relu_violation_mean": [],
+        "avg_u_data_mse": [],
     }
 
     # =========================
@@ -143,13 +154,15 @@ def main():
         epoch_Vdot_mean = 0.0
         epoch_violation_mean = 0.0
         epoch_relu_violation_mean = 0.0
+        epoch_u_data_mse = 0.0
 
         num_batches = 0
 
-        for batch_x, batch_z, batch_v in dataloader:
+        for batch_x, batch_z, batch_u, batch_v in dataloader:
             batch = {
                 "x": batch_x,
                 "z": batch_z,
+                "u": batch_u,
                 "v": batch_v,
             }
 
@@ -178,6 +191,7 @@ def main():
             epoch_Vdot_mean += stats["Vdot_mean"]
             epoch_violation_mean += stats["violation_mean"]
             epoch_relu_violation_mean += stats["relu_violation_mean"]
+            epoch_u_data_mse += stats["u_data_mse"]
             num_batches += 1
 
         avg_loss = epoch_loss / num_batches
@@ -185,6 +199,7 @@ def main():
         avg_Vdot_mean = epoch_Vdot_mean / num_batches
         avg_violation_mean = epoch_violation_mean / num_batches
         avg_relu_violation_mean = epoch_relu_violation_mean / num_batches
+        avg_u_data_mse = epoch_u_data_mse / num_batches
 
         history["epoch"].append(epoch + 1)
         history["avg_loss"].append(avg_loss)
@@ -192,6 +207,7 @@ def main():
         history["avg_Vdot_mean"].append(avg_Vdot_mean)
         history["avg_violation_mean"].append(avg_violation_mean)
         history["avg_relu_violation_mean"].append(avg_relu_violation_mean)
+        history["avg_u_data_mse"].append(avg_u_data_mse)
 
         print(
             f"Epoch {epoch+1}/{config['num_epochs']} | "
@@ -199,7 +215,7 @@ def main():
             f"V_mean={format_sci(avg_V_mean)} | "
             f"Vdot_mean={format_sci(avg_Vdot_mean)} | "
             f"violation_mean={format_sci(avg_violation_mean)} | "
-            f"relu_violation_mean={format_sci(avg_relu_violation_mean)}"
+            f"u_data_mse={format_sci(avg_u_data_mse)}"
         )
 
         ckpt_path = os.path.join(config["checkpoint_dir"], config["checkpoint_name"])

@@ -55,7 +55,7 @@ class CNetwork(nn.Module):
 
         inp = torch.cat([x, z], dim=-1)
         # C = self.net(inp)
-        C = 1 * torch.tanh(self.net(inp))
+        C = 1.5 * torch.tanh(self.net(inp))
         C = C.view(*x.shape[:-1], self.out_rows, self.out_cols)
         return C
 

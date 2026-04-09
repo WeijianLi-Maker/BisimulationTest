@@ -268,6 +268,7 @@ def pair_samples_randomly(
     Returns:
         x:  (N, 10)
         z:  (N, 2)
+        u:  (N, 5)
         v:  (N, 1)
         y1: (N, 2)
         y2: (N, 2)
@@ -283,11 +284,13 @@ def pair_samples_randomly(
     y2 = lip_points["y2"][idx_lip]
 
     x = five_points["x"][idx_five]
+    u = five_points["u"][idx_five]
     y1 = five_points["y1"][idx_five]
 
     return {
         "x": x,
         "z": z,
+        "u": u,
         "v": v,
         "y1": y1,
         "y2": y2,
@@ -311,12 +314,13 @@ def pair_samples_by_output_proximity(
     y2_all = lip_points["y2"]
 
     x_all = five_points["x"]
+    u_all = five_points["u"]
     y1_all = five_points["y1"]
 
     num_lip = z_all.shape[0]
     num_five = x_all.shape[0]
 
-    xs, zs, vs, y1s, y2s = [], [], [], [], []
+    xs, zs, us, vs, y1s, y2s = [], [], [], [], [], []
 
     max_trials = 20 * num_pairs
     trials = 0
@@ -328,6 +332,7 @@ def pair_samples_by_output_proximity(
         if torch.norm(y1_all[j] - y2_all[i], p=2).item() <= eps_pair:
             xs.append(x_all[j])
             zs.append(z_all[i])
+            us.append(u_all[j])
             vs.append(v_all[i])
             y1s.append(y1_all[j])
             y2s.append(y2_all[i])
@@ -343,6 +348,7 @@ def pair_samples_by_output_proximity(
     return {
         "x": torch.stack(xs, dim=0),
         "z": torch.stack(zs, dim=0),
+        "u": torch.stack(us, dim=0),
         "v": torch.stack(vs, dim=0),
         "y1": torch.stack(y1s, dim=0),
         "y2": torch.stack(y2s, dim=0),
@@ -497,6 +503,7 @@ def main():
     print("Dataset summary:")
     print("  x shape :", dataset["x"].shape)
     print("  z shape :", dataset["z"].shape)
+    print("  u shape :", dataset["u"].shape)
     print("  v shape :", dataset["v"].shape)
     print("  y1 shape:", dataset["y1"].shape)
     print("  y2 shape:", dataset["y2"].shape)

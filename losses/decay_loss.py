@@ -19,19 +19,23 @@ def compute_decay_loss(
         batch["x"]: (B, 10)
         batch["z"]: (B, 2)
         batch["v"]: (B, 1)
+        batch["u"]: (B, 5) optional sampled five-link input for diagnostics
     """
     x = batch["x"].clone().detach().requires_grad_(True)
     z = batch["z"].clone().detach().requires_grad_(True)
     v = batch["v"].clone().detach()
+    u_data = batch.get("u", None)
+    if u_data is not None:
+        u_data = u_data.clone().detach()
 
     # V(x, z)
     V = sim_fn(x, z)   # (B,)
 
-    # interface u = pi(x, z, v)
-    u = interface_net(x, z, v)   # (B, 5)
+    # interface u_hat = pi(x, z, v)
+    u_hat = interface_net(x, z, v)   # (B, 5)
 
     # dynamics
-    fx = five_link_system.dynamics(x, u)   # (B, 10)
+    fx = five_link_system.dynamics(x, u_hat)   # (B, 10)
     fz = lip_system.dynamics(z, v)         # (B, 2)
 
     # gradients
@@ -54,7 +58,7 @@ def compute_decay_loss(
     violation = Vdot + r * V
     # loss = F.relu(violation).mean()
 
-    u_reg = 1e-4 * (u ** 2).mean()
+    u_reg = 1e-4 * (u_hat ** 2).mean()
     loss = F.relu(violation).mean() + u_reg
 
     stats = {
@@ -63,6 +67,9 @@ def compute_decay_loss(
         "Vdot_mean": Vdot.mean().item(),
         "violation_mean": violation.mean().item(),
         "relu_violation_mean": F.relu(violation).mean().item(),
+        "u_hat_mean": u_hat.mean().item(),
     }
+    if u_data is not None:
+        stats["u_data_mse"] = ((u_hat - u_data) ** 2).mean().item()
 
     return loss, stats
