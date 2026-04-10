@@ -367,9 +367,9 @@ def default_config() -> Dict:
     "integrator": "euler",   # 改这里
     "dt": 0.02,              # 稍微大一点
     "num_steps": 50,          # 先极小
-    "num_lip_trajectories": 2,
-    "num_five_link_trajectories": 2,
-    "num_pairs": 50,
+    "num_lip_trajectories": 10,
+    "num_five_link_trajectories": 10,
+    "num_pairs": 1000,
 
     "pair_mode": "close",
     "eps_pair": 0.5,

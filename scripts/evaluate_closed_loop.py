@@ -222,58 +222,56 @@ def save_csv(path: str, rollout: Dict[str, torch.Tensor]) -> None:
             )
 
 
-def maybe_save_plots(output_dir: str, rollout: Dict[str, torch.Tensor]) -> None:
+def maybe_save_plots(output_dir: str, rollout: Dict[str, torch.Tensor], show_plots: bool = False) -> list[str]:
     try:
         import matplotlib.pyplot as plt
     except ImportError:
         print("matplotlib is not installed; skipping plots.")
-        return
+        return []
 
     t = rollout["t"].cpu()
     y1 = rollout["y1"].cpu()
     y2 = rollout["y2"].cpu()
-    V = rollout["V"].cpu()
-    violation = rollout["violation"].cpu()
-    err = rollout["output_error"].cpu()
-    u = rollout["u"].cpu()
-    t_u = t[:-1]
+    Vdot = rollout["Vdot"].cpu()
+    position_error = torch.abs(y1[:, 0] - y2[:, 0])
+    velocity_error = torch.abs(y1[:, 1] - y2[:, 1])
+    saved_paths = []
+
+    def save_current_figure(filename: str) -> None:
+        path = os.path.join(output_dir, filename)
+        plt.tight_layout()
+        plt.savefig(path, dpi=200)
+        saved_paths.append(path)
+        if not show_plots:
+            plt.close()
 
     plt.figure()
     plt.plot(t, y1[:, 0], label="y1 position")
     plt.plot(t, y2[:, 0], label="y2 position")
+    plt.plot(t, position_error, label="|y1 position - y2 position|")
     plt.xlabel("t")
     plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "closed_loop_outputs_position.png"), dpi=200)
-    plt.close()
+    save_current_figure("closed_loop_outputs_position.png")
 
     plt.figure()
     plt.plot(t, y1[:, 1], label="y1 velocity")
     plt.plot(t, y2[:, 1], label="y2 velocity")
+    plt.plot(t, velocity_error, label="|y1 velocity - y2 velocity|")
     plt.xlabel("t")
     plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "closed_loop_outputs_velocity.png"), dpi=200)
-    plt.close()
+    save_current_figure("closed_loop_outputs_velocity.png")
 
     plt.figure()
-    plt.plot(t, V, label="V(x,z)")
-    plt.plot(t, violation, label="Vdot + rV")
-    plt.plot(t, err, label="||y1-y2||")
+    plt.plot(t, Vdot, label="Vdot")
+    plt.axhline(0.0, color="black", linewidth=1.0, linestyle="--")
     plt.xlabel("t")
     plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "closed_loop_V_and_error.png"), dpi=200)
-    plt.close()
+    save_current_figure("closed_loop_Vdot.png")
 
-    plt.figure()
-    for i in range(u.shape[-1]):
-        plt.plot(t_u, u[:, i], label=f"u{i}")
-    plt.xlabel("t")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "closed_loop_interface_u.png"), dpi=200)
-    plt.close()
+    if show_plots:
+        plt.show()
+
+    return saved_paths
 
 
 def parse_args() -> argparse.Namespace:
@@ -306,6 +304,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--x0", type=float, nargs=10, default=[0.0] * 10)
     parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument("--show-plots", action="store_true", help="Open matplotlib windows after saving plots.")
     return parser.parse_args()
 
 
@@ -372,23 +371,34 @@ def main() -> None:
     )
     save_csv(csv_path, rollout)
 
+    saved_plot_paths = []
     if not args.no_plots:
-        maybe_save_plots(args.output_dir, rollout)
+        saved_plot_paths = maybe_save_plots(args.output_dir, rollout, show_plots=args.show_plots)
 
     err = rollout["output_error"]
     V = rollout["V"]
     violation = rollout["violation"]
+    z = rollout["z"]
+    v = rollout["v"]
     print("Closed-loop evaluation finished.")
     print(f"  checkpoint: {args.checkpoint}")
     print(f"  epoch: {checkpoint.get('epoch')}")
     print(f"  saved pt: {pt_path}")
     print(f"  saved csv: {csv_path}")
+    if saved_plot_paths:
+        print("  saved plots:")
+        for path in saved_plot_paths:
+            print(f"    {path}")
     print(f"  mean ||y1-y2||: {err.mean().item():.6e}")
     print(f"  max  ||y1-y2||: {err.max().item():.6e}")
     print(f"  V initial: {V[0].item():.6e}")
     print(f"  V final:   {V[-1].item():.6e}")
     print(f"  mean Vdot+rV: {violation.mean().item():.6e}")
     print(f"  max  Vdot+rV: {violation.max().item():.6e}")
+    print(f"  z0 range: [{z[:, 0].min().item():.6e}, {z[:, 0].max().item():.6e}]")
+    print(f"  z1 range: [{z[:, 1].min().item():.6e}, {z[:, 1].max().item():.6e}]")
+    if v.numel() > 0:
+        print(f"  v range:  [{v[:, 0].min().item():.6e}, {v[:, 0].max().item():.6e}]")
     if rollout["stopped_early"]:
         print(f"  stopped early: {rollout['stop_reason']}")
 
